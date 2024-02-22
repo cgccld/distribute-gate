@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "prettier-format": "prettier --config .prettierrc 'pages/**/*.tsx' --write"
+    "prettier-format": "prettier --config .prettierrc '**/**/*.tsx' --write"
   },
   "dependencies": {
     "@ant-design/icons": "^5.3.0",
@@ -19,7 +19,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "viem": "^2.7.3",
-    "wagmi": "^2.5.5"
+    "wagmi": "^2.5.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^18.19.3",
