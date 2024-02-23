@@ -21,7 +21,7 @@ const PreviewTable: React.FC<PreviewTableProps> = ({ datas }) => {
       width: '65%'
     },
     {
-      title: 'Transfer Amount (gwei)',
+      title: 'Transfer Amount',
       dataIndex: 'amount',
       width: '35%'
     }
