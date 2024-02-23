@@ -13,7 +13,7 @@ const config = getDefaultConfig({
   appName: 'Distribute Gate',
   projectId: '83396b65241a819df7aefacec47e0630',
   chains: [bsc, bscTestnet],
-  ssr: true
+  ssr: true,
 });
 
 const client = new QueryClient();

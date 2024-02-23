@@ -7,10 +7,11 @@ import {
   useReadContracts,
   useWriteContract,
   useWaitForTransactionReceipt,
-} from 'wagmi'; 
+  useSendTransaction
+} from 'wagmi';
 
 import * as XLSX from 'xlsx';
-import { Address } from 'viem';
+import { Address, parseUnits, parseGwei } from 'viem';
 import type { NextPage } from 'next';
 import { useEffect, useState } from 'react';
 import { erc20Abi, distributeGateAbi } from '../abi';
@@ -31,7 +32,8 @@ import {
 import { useForm } from 'antd/lib/form/Form';
 import { ExclamationCircleOutlined, UploadOutlined } from '@ant-design/icons';
 
-let DISTRIBUTE_GATE: Address = '0x';
+let DISTRIBUTE_GATE: Address;
+const NULL_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 const layout = {
   labelCol: { span: 8 },
@@ -39,7 +41,7 @@ const layout = {
 };
 
 const Home: NextPage = () => {
-  const {chain} = useAccount();
+  const { chain } = useAccount();
   const [inputForm] = useForm();
   const [items, setItems] = useState<Item[]>([]);
   const [approveTx, setApproveTx] = useState('');
@@ -50,15 +52,17 @@ const Home: NextPage = () => {
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  console.log(chain?.id);
+
   switch (chain?.id) {
     case 56: // Mainnet
-      DISTRIBUTE_GATE = '0x';
+      DISTRIBUTE_GATE = '0x3f59d8896346d4E2e8c75622c30694E823EfAFDd';
       break;
     case 97: // Testnet
-      DISTRIBUTE_GATE = '0x4eca7c22d0d1eee734a7d74332bee2cabeec27c7'; 
+      DISTRIBUTE_GATE = '0x3f59d8896346d4E2e8c75622c30694E823EfAFDd';
       break;
     default:
-      DISTRIBUTE_GATE = '0x4eca7c22d0d1eee734a7d74332bee2cabeec27c7';
+      DISTRIBUTE_GATE = '0x3f59d8896346d4E2e8c75622c30694E823EfAFDd';
   }
 
   const handleOk = () => {
@@ -68,10 +72,10 @@ const Home: NextPage = () => {
   function handleDownloadClick() {
     // Create sample data
     const data: any[][] = [
-        ['address', 'amount'],
-        ['0x17f0631Eb1454d0dCfF71e4A72590FD94d4B530E', 1],
-        ['0x54171222a4d651B05118b4CbD8942f3df0332B32', 2],
-        ['0xAC9598F1a3Cae65F6bf583F30ECEE4a8D2E4DE7b', 3],
+      ['address', 'amount'],
+      ['0x17f0631Eb1454d0dCfF71e4A72590FD94d4B530E', 1],
+      ['0x54171222a4d651B05118b4CbD8942f3df0332B32', 2],
+      ['0xAC9598F1a3Cae65F6bf583F30ECEE4a8D2E4DE7b', 3]
     ];
 
     // Create a new Excel workbook
@@ -82,7 +86,10 @@ const Home: NextPage = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
 
     // Generate a blob from the workbook
-    const wbout: ArrayBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const wbout: ArrayBuffer = XLSX.write(wb, {
+      type: 'buffer',
+      bookType: 'xlsx'
+    });
 
     // Create a Blob object
     const blob: Blob = new Blob([wbout], { type: 'application/octet-stream' });
@@ -102,8 +109,7 @@ const Home: NextPage = () => {
     // Clean up
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
-}
-
+  }
 
   let {
     data: approveHash,
@@ -115,11 +121,20 @@ const Home: NextPage = () => {
     error: distributeError,
     writeContract: writeContractDistribute
   } = useWriteContract();
+  let { 
+    data: depositHash,
+    error: depositError, 
+    sendTransaction 
+  } = useSendTransaction();
+
   let { data: approveReceipt } = useWaitForTransactionReceipt({
     hash: approveHash
   });
   let { data: distributeReceipt } = useWaitForTransactionReceipt({
     hash: distributeHash
+  });
+  let { data: depositReceipt } = useWaitForTransactionReceipt({
+    hash: depositHash
   });
 
   const props: UploadProps = {
@@ -163,6 +178,35 @@ const Home: NextPage = () => {
     }
   };
 
+  const DistributeToken = async (addresses: Address[], amounts: string[]) => {
+    let weiAmounts;
+    
+    if (decimals?.result === undefined) {
+      if (tokenAddress !== NULL_ADDRESS) {
+        throw new Error('Decimals result is undefined');
+      } else {
+        weiAmounts = amounts.map(
+          (amount) => parseUnits(amount, 18)
+        );
+      }
+    } else {
+      weiAmounts = amounts.map(
+        (amount) => parseUnits(amount, decimals?.result)
+      );
+    }
+
+    await writeContractDistribute({
+      address: DISTRIBUTE_GATE as Address,
+      abi: distributeGateAbi,
+      functionName: 'distribute',
+      args: [
+        tokenAddress as Address,
+        addresses as Address[],
+        weiAmounts
+      ]
+    });
+  }
+
   const tokenContract = {
     address: tokenAddress as Address,
     abi: erc20Abi
@@ -180,24 +224,34 @@ const Home: NextPage = () => {
       setLoading(true);
       if (!tokenAddress || !items.length)
         throw new Error('Token address and data must be provided.');
-
+      let totalAmounts;
       if (decimals?.result === undefined) {
-        throw new Error('Decimals result is undefined');
+        if (tokenAddress !== NULL_ADDRESS) {
+          throw new Error('Decimals result is undefined');
+        } else {
+          totalAmounts = items
+            .reduce(
+              (acc, item) =>
+                acc + parseUnits((item.amount), 18),
+              BigInt(0)
+            );
+        } 
+        console.log(totalAmounts);
+        await sendTransaction({gasPrice: parseGwei('20'), to: DISTRIBUTE_GATE, value: totalAmounts});
+      } else {
+        totalAmounts = items
+          .reduce(
+            (acc, item) =>
+              acc + parseUnits((item.amount), decimals.result),
+            BigInt(0)
+          );
+        await writeContractApprove({
+          address: tokenAddress as Address,
+          abi: erc20Abi,
+          functionName: 'approve',
+          args: [DISTRIBUTE_GATE, totalAmounts]
+        });
       }
-
-      const totalAmount = items
-        .reduce(
-          (acc, item) =>
-            acc + BigInt(item.amount) * BigInt(10 ** decimals.result),
-          BigInt(0)
-        )
-        .toString();
-      await writeContractApprove({
-        address: tokenAddress as Address,
-        abi: erc20Abi,
-        functionName: 'approve',
-        args: [DISTRIBUTE_GATE, BigInt(totalAmount)]
-      });
     } catch (error) {
       setLoading(false);
       console.error('Error combining actions:', error);
@@ -210,7 +264,11 @@ const Home: NextPage = () => {
 
   useEffect(() => {
     const isValidAddress = /^0x[a-fA-F0-9]{40}$/.test(tokenAddress);
-    setValidAddress(isValidAddress && decimals?.result != undefined);
+    setValidAddress(
+      isValidAddress &&
+        (decimals?.result != undefined ||
+          tokenAddress == NULL_ADDRESS)
+    );
   }, [tokenAddress, decimals?.result]);
 
   useEffect(() => {
@@ -218,33 +276,12 @@ const Home: NextPage = () => {
   }, [items]);
 
   useEffect(() => {
-    async function DistributeToken(addresses: Address[], amounts: bigint[]) {
-      if (decimals?.result === undefined) {
-        throw new Error('Decimals result is undefined');
-      }
-
-      const weiAmounts = amounts.map(
-        (amount) => BigInt(amount) * BigInt(10 ** decimals.result)
-      );
-
-      await writeContractDistribute({
-        address: DISTRIBUTE_GATE as Address,
-        abi: distributeGateAbi,
-        functionName: 'distribute',
-        args: [
-          tokenAddress as Address,
-          addresses as Address[],
-          weiAmounts as bigint[]
-        ]
-      });
-    }
-
-    if (approveReceipt !== undefined) {
+    if (approveReceipt !== undefined || depositReceipt !== undefined) {
       const addresses = items.map((item) => item.address);
-      const amounts = items.map((item) => BigInt(item.amount));
+      const amounts = items.map((item) => item.amount);
       DistributeToken(addresses as Address[], amounts);
     }
-  }, [approveReceipt]);
+  }, [approveReceipt, depositReceipt]);
 
   useEffect(() => {
     if (approveReceipt !== undefined) {
@@ -289,11 +326,18 @@ const Home: NextPage = () => {
                   help={validAddress ? '' : 'Token address is not valid.'}
                 >
                   <Badge.Ribbon
-                    text={name?.result}
+                    text={
+                      tokenAddress ==
+                      NULL_ADDRESS
+                        ? 'BNB'
+                        : name?.result
+                    }
                     style={{
                       top: -10,
                       visibility:
-                        name?.result !== undefined &&
+                        (name?.result !== undefined ||
+                          tokenAddress ==
+                            NULL_ADDRESS) &&
                         tokenAddress.length !== 0 &&
                         /^0x[a-fA-F0-9]{40}$/.test(tokenAddress) &&
                         decimals?.result !== undefined
@@ -314,8 +358,15 @@ const Home: NextPage = () => {
                   validateStatus={validFile ? undefined : 'error'}
                   help={validFile ? '' : 'File is not valid.'}
                 >
-                  <Upload {...props} accept=".xls,.xlsx" maxCount={1} disabled={loading}>
-                    <Button icon={<UploadOutlined />} disabled={loading}>Click to Upload</Button>
+                  <Upload
+                    {...props}
+                    accept=".xls,.xlsx"
+                    maxCount={1}
+                    disabled={loading}
+                  >
+                    <Button icon={<UploadOutlined />} disabled={loading}>
+                      Click to Upload
+                    </Button>
                     <Tag
                       icon={<ExclamationCircleOutlined />}
                       color="warning"
@@ -347,15 +398,46 @@ const Home: NextPage = () => {
             centered
             open={isModalOpen}
             onOk={() => setIsModalOpen(false)}
-            closeIcon= {false}
+            closeIcon={false}
             footer={[
-              <Button key="submit" type="primary" loading={loading} onClick={handleOk}>
+              <Button
+                key="submit"
+                type="primary"
+                loading={loading}
+                onClick={handleOk}
+              >
                 Ok
-              </Button>,
+              </Button>
             ]}
           >
-            <a href={`https://testnet.bscscan.com/tx/${approveTx}`} target="_blank" rel="noopener noreferrer"><p>Approve tx: {`https://testnet.bscscan.com/tx/${approveTx}`}</p></a>
-            <a href={`https://testnet.bscscan.com/tx/${distributeTx}`} target="_blank" rel="noopener noreferrer"><p>Distribute tx: {`https://testnet.bscscan.com/tx/${distributeTx}`}</p></a>
+            {tokenAddress !== NULL_ADDRESS ? 
+              (
+                <a
+                  href={`https://testnet.bscscan.com/tx/${approveTx}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <p >Approve tx: {`https://testnet.bscscan.com/tx/${approveTx}`}</p>
+                </a>
+              ) : (
+                <a
+                  href={`https://testnet.bscscan.com/tx/${depositHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <p >Deposit tx: {`https://testnet.bscscan.com/tx/${depositHash}`}</p>
+                </a>
+              )}
+            <a
+              href={`https://testnet.bscscan.com/tx/${distributeTx}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <p>
+                Distribute tx:{' '}
+                {`https://testnet.bscscan.com/tx/${distributeTx}`}
+              </p>
+            </a>
           </Modal>
         </>
       </main>
