@@ -3,16 +3,16 @@ import NavBar from '../components/NavBar';
 import styles from '../styles/Home.module.css';
 import PreviewTable from '../components/PreviewTable';
 import {
+  useAccount,
   useReadContracts,
+  useWriteContract,
   useWaitForTransactionReceipt,
-  useWriteContract
-} from 'wagmi'; // Import the hook directly
+} from 'wagmi'; 
 
 import * as XLSX from 'xlsx';
 import { Address } from 'viem';
 import type { NextPage } from 'next';
 import { useEffect, useState } from 'react';
-import { DISTRIBUTE_GATE } from '../constants';
 import { erc20Abi, distributeGateAbi } from '../abi';
 import { Item } from '../components/PreviewTable/types';
 import {
@@ -31,12 +31,15 @@ import {
 import { useForm } from 'antd/lib/form/Form';
 import { ExclamationCircleOutlined, UploadOutlined } from '@ant-design/icons';
 
+let DISTRIBUTE_GATE: Address = '0x';
+
 const layout = {
   labelCol: { span: 8 },
   wrapperCol: { span: 16 }
 };
 
 const Home: NextPage = () => {
+  const {chain} = useAccount();
   const [inputForm] = useForm();
   const [items, setItems] = useState<Item[]>([]);
   const [approveTx, setApproveTx] = useState('');
@@ -47,9 +50,59 @@ const Home: NextPage = () => {
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  switch (chain?.id) {
+    case 56: // Mainnet
+      DISTRIBUTE_GATE = '0x';
+      break;
+    case 97: // Testnet
+      DISTRIBUTE_GATE = '0x4eca7c22d0d1eee734a7d74332bee2cabeec27c7'; 
+      break;
+    default:
+      DISTRIBUTE_GATE = '0x4eca7c22d0d1eee734a7d74332bee2cabeec27c7';
+  }
+
   const handleOk = () => {
     setIsModalOpen(false);
   };
+
+  function handleDownloadClick() {
+    // Create sample data
+    const data: any[][] = [
+        ['address', 'amount'],
+        ['0x17f0631Eb1454d0dCfF71e4A72590FD94d4B530E', 1],
+        ['0x54171222a4d651B05118b4CbD8942f3df0332B32', 2],
+        ['0xAC9598F1a3Cae65F6bf583F30ECEE4a8D2E4DE7b', 3],
+    ];
+
+    // Create a new Excel workbook
+    const wb: XLSX.WorkBook = XLSX.utils.book_new();
+    const ws: XLSX.WorkSheet = XLSX.utils.aoa_to_sheet(data);
+
+    // Add the worksheet to the workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+    // Generate a blob from the workbook
+    const wbout: ArrayBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Create a Blob object
+    const blob: Blob = new Blob([wbout], { type: 'application/octet-stream' });
+
+    // Create a URL for the Blob object
+    const url: string = window.URL.createObjectURL(blob);
+
+    // Create a link element
+    const a: HTMLAnchorElement = document.createElement('a');
+    a.href = url;
+    a.download = 'sample.xlsx';
+
+    // Append the link to the body and click it programmatically
+    document.body.appendChild(a);
+    a.click();
+
+    // Clean up
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+}
 
 
   let {
@@ -157,8 +210,8 @@ const Home: NextPage = () => {
 
   useEffect(() => {
     const isValidAddress = /^0x[a-fA-F0-9]{40}$/.test(tokenAddress);
-    setValidAddress(isValidAddress);
-  }, [tokenAddress]);
+    setValidAddress(isValidAddress && decimals?.result != undefined);
+  }, [tokenAddress, decimals?.result]);
 
   useEffect(() => {
     setValidFile(items.length !== 0);
@@ -225,6 +278,9 @@ const Home: NextPage = () => {
           <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 32 }}>
             <Col className="gutter-row" span={12}>
               <Form {...layout} form={inputForm}>
+                <Form.Item label="Sample file">
+                  <Button onClick={handleDownloadClick}>Download</Button>
+                </Form.Item>
                 <Form.Item
                   name={['token', 'address']}
                   label="Token address"
