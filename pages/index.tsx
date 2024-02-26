@@ -395,7 +395,7 @@ const Home: NextPage = () => {
             </Col>
           </Row>
           <Modal
-            title="Transfer successfully"
+            title="Transaction submitted successfully"
             centered
             open={isModalOpen}
             onOk={() => setIsModalOpen(false)}
