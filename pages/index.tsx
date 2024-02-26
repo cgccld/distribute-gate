@@ -133,7 +133,7 @@ const Home: NextPage = () => {
   let { data: distributeReceipt } = useWaitForTransactionReceipt({
     hash: distributeHash
   });
-  let { data: depositReceipt } = useWaitForTransactionReceipt({
+  let { data: depositReceipt, isSuccess: depositSuccess } = useWaitForTransactionReceipt({
     hash: depositHash
   });
 
@@ -237,6 +237,7 @@ const Home: NextPage = () => {
             );
         } 
         console.log(totalAmounts);
+        
         await sendTransaction({gasPrice: parseGwei('20'), to: DISTRIBUTE_GATE, value: totalAmounts});
       } else {
         totalAmounts = items
@@ -259,8 +260,8 @@ const Home: NextPage = () => {
   };
 
   useEffect(() => {
-    if (approveError != null || distributeError != null) setLoading(false);
-  }, [approveError, distributeError]);
+    if (approveError != null || distributeError != null || depositError != null) setLoading(false);
+  }, [approveError, distributeError, depositError]);
 
   useEffect(() => {
     const isValidAddress = /^0x[a-fA-F0-9]{40}$/.test(tokenAddress);
@@ -276,12 +277,12 @@ const Home: NextPage = () => {
   }, [items]);
 
   useEffect(() => {
-    if (approveReceipt !== undefined || depositReceipt !== undefined) {
+    if (approveReceipt !== undefined || depositSuccess !== false) {
       const addresses = items.map((item) => item.address);
       const amounts = items.map((item) => item.amount);
       DistributeToken(addresses as Address[], amounts);
     }
-  }, [approveReceipt, depositReceipt]);
+  }, [approveReceipt, depositSuccess]);
 
   useEffect(() => {
     if (approveReceipt !== undefined) {
