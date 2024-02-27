@@ -43,16 +43,12 @@ const layout = {
 const Home: NextPage = () => {
   const { chain } = useAccount();
   const [inputForm] = useForm();
-  const [items, setItems] = useState<Item[]>([]);
-  const [approveTx, setApproveTx] = useState('');
-  const [tokenAddress, setTokenAddress] = useState('');
-  const [distributeTx, setDistributeTx] = useState('');
-  const [validFile, setValidFile] = useState(true);
-  const [validAddress, setValidAddress] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<Item[]>([]);
+  const [validFile, setValidFile] = useState(true);
+  const [tokenAddress, setTokenAddress] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  console.log(chain?.id);
+  const [validAddress, setValidAddress] = useState(true);
 
   switch (chain?.id) {
     case 56: // Mainnet
@@ -67,6 +63,7 @@ const Home: NextPage = () => {
 
   const handleOk = () => {
     setIsModalOpen(false);
+    setLoading(false);
   };
 
   function handleDownloadClick() {
@@ -112,30 +109,33 @@ const Home: NextPage = () => {
   }
 
   let {
-    data: approveHash,
+    data: approveTx,
     error: approveError,
     writeContract: writeContractApprove
   } = useWriteContract();
   let {
-    data: distributeHash,
+    data: distributeTx,
     error: distributeError,
     writeContract: writeContractDistribute
   } = useWriteContract();
-  let { 
-    data: depositHash,
-    error: depositError, 
-    sendTransaction 
+  let {
+    data: depositTx,
+    error: depositError,
+    sendTransaction
   } = useSendTransaction();
 
-  let { data: approveReceipt } = useWaitForTransactionReceipt({
-    hash: approveHash
-  });
-  let { data: distributeReceipt } = useWaitForTransactionReceipt({
-    hash: distributeHash
-  });
-  let { data: depositReceipt, isSuccess: depositSuccess } = useWaitForTransactionReceipt({
-    hash: depositHash
-  });
+  let { data: approveReceipt, isSuccess: approveSuccess } =
+    useWaitForTransactionReceipt({
+      hash: approveTx
+    });
+  let { data: distributeReceipt, isSuccess: distributeSuccess } =
+    useWaitForTransactionReceipt({
+      hash: distributeTx
+    });
+  let { data: depositReceipt, isSuccess: depositSuccess } =
+    useWaitForTransactionReceipt({
+      hash: depositTx
+    });
 
   const props: UploadProps = {
     name: 'file',
@@ -180,18 +180,16 @@ const Home: NextPage = () => {
 
   const DistributeToken = async (addresses: Address[], amounts: string[]) => {
     let weiAmounts;
-    
+
     if (decimals?.result === undefined) {
       if (tokenAddress !== NULL_ADDRESS) {
         throw new Error('Decimals result is undefined');
       } else {
-        weiAmounts = amounts.map(
-          (amount) => parseUnits(amount, 18)
-        );
+        weiAmounts = amounts.map((amount) => parseUnits(amount, 18));
       }
     } else {
-      weiAmounts = amounts.map(
-        (amount) => parseUnits(amount, decimals?.result)
+      weiAmounts = amounts.map((amount) =>
+        parseUnits(amount, decimals?.result)
       );
     }
 
@@ -199,13 +197,9 @@ const Home: NextPage = () => {
       address: DISTRIBUTE_GATE as Address,
       abi: distributeGateAbi,
       functionName: 'distribute',
-      args: [
-        tokenAddress as Address,
-        addresses as Address[],
-        weiAmounts
-      ]
+      args: [tokenAddress as Address, addresses as Address[], weiAmounts]
     });
-  }
+  };
 
   const tokenContract = {
     address: tokenAddress as Address,
@@ -229,23 +223,21 @@ const Home: NextPage = () => {
         if (tokenAddress !== NULL_ADDRESS) {
           throw new Error('Decimals result is undefined');
         } else {
-          totalAmounts = items
-            .reduce(
-              (acc, item) =>
-                acc + parseUnits((item.amount), 18),
-              BigInt(0)
-            );
-        } 
-        console.log(totalAmounts);
-        
-        await sendTransaction({gasPrice: parseGwei('20'), to: DISTRIBUTE_GATE, value: totalAmounts});
-      } else {
-        totalAmounts = items
-          .reduce(
-            (acc, item) =>
-              acc + parseUnits((item.amount), decimals.result),
+          totalAmounts = items.reduce(
+            (acc, item) => acc + parseUnits(item.amount, 18),
             BigInt(0)
           );
+        }
+        await sendTransaction({
+          gasPrice: parseGwei('20'),
+          to: DISTRIBUTE_GATE,
+          value: totalAmounts
+        });
+      } else {
+        totalAmounts = items.reduce(
+          (acc, item) => acc + parseUnits(item.amount, decimals.result),
+          BigInt(0)
+        );
         await writeContractApprove({
           address: tokenAddress as Address,
           abi: erc20Abi,
@@ -254,21 +246,25 @@ const Home: NextPage = () => {
         });
       }
     } catch (error) {
+      console.log(error)
       setLoading(false);
       console.error('Error combining actions:', error);
     }
   };
 
   useEffect(() => {
-    if (approveError != null || distributeError != null || depositError != null) setLoading(false);
+    if (distributeError !== null || approveError !== null || depositError !== null) {
+      console.log(distributeError);
+
+      setLoading(false);
+    }
   }, [approveError, distributeError, depositError]);
 
   useEffect(() => {
     const isValidAddress = /^0x[a-fA-F0-9]{40}$/.test(tokenAddress);
     setValidAddress(
       isValidAddress &&
-        (decimals?.result != undefined ||
-          tokenAddress == NULL_ADDRESS)
+        (decimals?.result != undefined || tokenAddress == NULL_ADDRESS)
     );
   }, [tokenAddress, decimals?.result]);
 
@@ -277,30 +273,21 @@ const Home: NextPage = () => {
   }, [items]);
 
   useEffect(() => {
-    if (approveReceipt !== undefined || depositSuccess !== false) {
+    if (approveReceipt !== undefined || depositReceipt !== undefined) {
       const addresses = items.map((item) => item.address);
       const amounts = items.map((item) => item.amount);
-      DistributeToken(addresses as Address[], amounts);
+      setTimeout(function () {
+        DistributeToken(addresses as Address[], amounts);
+      }, 5000);
     }
-  }, [approveReceipt, depositSuccess]);
+  }, [approveReceipt, depositReceipt]);
+
 
   useEffect(() => {
-    if (approveReceipt !== undefined) {
-      setApproveTx(approveReceipt.transactionHash);
-    } else {
-      setApproveTx('');
-    }
-  }, [approveReceipt]);
-
-  useEffect(() => {
-    if (distributeReceipt !== undefined) {
-      setLoading(false);
-      setDistributeTx(distributeReceipt.transactionHash);
+    if (distributeReceipt !== undefined && distributeSuccess) {
       setIsModalOpen(true);
-    } else {
-      setDistributeTx('');
     }
-  }, [distributeReceipt]);
+  }, [distributeReceipt, distributeSuccess]);
 
   return (
     <div className={styles.container}>
@@ -327,21 +314,16 @@ const Home: NextPage = () => {
                   help={validAddress ? '' : 'Token address is not valid.'}
                 >
                   <Badge.Ribbon
-                    text={
-                      tokenAddress ==
-                      NULL_ADDRESS
-                        ? 'BNB'
-                        : name?.result
-                    }
+                    text={tokenAddress === NULL_ADDRESS ? 'BNB' : name?.result}
                     style={{
                       top: -10,
                       visibility:
                         (name?.result !== undefined ||
-                          tokenAddress ==
-                            NULL_ADDRESS) &&
-                        tokenAddress.length !== 0 &&
-                        /^0x[a-fA-F0-9]{40}$/.test(tokenAddress) &&
-                        decimals?.result !== undefined
+                          decimals?.result !== undefined ||
+                          tokenAddress === NULL_ADDRESS) &&
+                        (tokenAddress === NULL_ADDRESS ||
+                          (tokenAddress.length !== 0 &&
+                            /^0x[a-fA-F0-9]{40}$/.test(tokenAddress)))
                           ? 'visible'
                           : 'hidden'
                     }}
@@ -401,34 +383,32 @@ const Home: NextPage = () => {
             onOk={() => setIsModalOpen(false)}
             closeIcon={false}
             footer={[
-              <Button
-                key="submit"
-                type="primary"
-                loading={loading}
-                onClick={handleOk}
-              >
+              <Button key="submit" type="primary" onClick={handleOk}>
                 Ok
               </Button>
             ]}
           >
-            {tokenAddress !== NULL_ADDRESS ? 
-              (
-                <a
-                  href={`https://testnet.bscscan.com/tx/${approveTx}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <p >Approve tx: {`https://testnet.bscscan.com/tx/${approveTx}`}</p>
-                </a>
-              ) : (
-                <a
-                  href={`https://testnet.bscscan.com/tx/${depositHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <p >Deposit tx: {`https://testnet.bscscan.com/tx/${depositHash}`}</p>
-                </a>
-              )}
+            {tokenAddress !== NULL_ADDRESS ? (
+              <a
+                href={`https://testnet.bscscan.com/tx/${approveTx}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <p>
+                  Approve tx: {`https://testnet.bscscan.com/tx/${approveTx}`}
+                </p>
+              </a>
+            ) : (
+              <a
+                href={`https://testnet.bscscan.com/tx/${depositTx}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <p>
+                  Deposit tx: {`https://testnet.bscscan.com/tx/${depositTx}`}
+                </p>
+              </a>
+            )}
             <a
               href={`https://testnet.bscscan.com/tx/${distributeTx}`}
               target="_blank"
